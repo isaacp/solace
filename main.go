@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/solace/terminal"
 )
@@ -17,6 +18,9 @@ func main() {
 	line := ""
 	for line != "quit" {
 		fmt.Scanln(&line)
-		fmt.Println(line)
+		term.Write(line)
+		time.Sleep(1000)
+		message, _ := term.Read()
+		fmt.Println(message)
 	}
 }

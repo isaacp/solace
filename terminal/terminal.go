@@ -54,6 +54,16 @@ func (t *Terminal) Write(message string) (int, error) {
 	}
 	return pipe.Write([]byte(message))
 }
+func (t *Terminal) Read() (string, error) {
+	message := make([]byte, 0)
+	pipe, err := t.execCmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+
+	pipe.Read(message)
+	return string(message), nil
+}
 
 func (t *Terminal) Run() error {
 	// Make sure to close the pty at the end.
