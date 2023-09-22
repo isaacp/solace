@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -82,17 +81,10 @@ func (t *Terminal) Run() error {
 	ch <- syscall.SIGWINCH                        // Initial resize.
 	defer func() { signal.Stop(ch); close(ch) }() // Cleanup signals when done.
 
-	// Set stdin in raw mode.
-	// oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort.
-
 	// Copy stdin to the pty and the pty to stdout.
 	// NOTE: The goroutine will keep reading until the next keystroke before returning.
-	go func() { _, _ = io.Copy(t.ptmx, os.Stdin) }()
-	go func() { _, _ = io.Copy(os.Stdout, t.ptmx) }()
+	// go func() { _, _ = io.Copy(t.ptmx, os.Stdin) }()
+	// go func() { _, _ = io.Copy(os.Stdout, t.ptmx) }()
 
 	return nil
 }
