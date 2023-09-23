@@ -1,88 +1,132 @@
 package main
 
-import (
-	"fmt"
-	"os"
+// A simple program demonstrating the text input component from the Bubbles
+// component library.
 
-	"github.com/charmbracelet/bubbles/list"
+import (
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"time"
+
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/creack/pty"
+	"github.com/solace/terminal"
 )
 
-var docStyle = lipgloss.NewStyle().Margin(1, 2)
+var p *os.File
+var term terminal.Terminal
 
-type item struct {
-	title, desc string
+type leader struct {
+	file *os.File
 }
 
-func (i item) Title() string       { return i.title }
-func (i item) Description() string { return i.desc }
-func (i item) FilterValue() string { return i.title }
-
-type model struct {
-	list list.Model
-}
-
-func (m model) Init() tea.Cmd {
+func (l *leader) Initialize() error {
+	c := exec.Command("/bin/zsh")
+	file, err := pty.Start(c)
+	if err != nil {
+		return errors.New("could not start shell")
+	}
+	l.file = file
 	return nil
 }
 
+func (l *leader) Write(message string) (int, error) {
+	return l.file.WriteString(message)
+}
+
+func (l *leader) Read() (string, error) {
+	arr := make([]byte, 16384)
+	l.file.Read(arr)
+	return string(arr), nil
+}
+
+func (l *leader) Close() error {
+	return l.file.Close()
+}
+
+var l leader
+
+func main() {
+	// c := exec.Command("/bin/zsh")
+	// pt, err := pty.Start(c)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	os.Exit(1)
+	// }
+	// p = pt
+
+	l = leader{}
+	l.Initialize()
+	defer l.Close()
+	//term.Run()
+	pr := tea.NewProgram(initialModel())
+	if _, err := pr.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+type (
+	errMsg error
+)
+
+type model struct {
+	textInput textinput.Model
+	err       error
+}
+
+func initialModel() model {
+	ti := textinput.New()
+	ti.Placeholder = "<command>"
+	ti.Focus()
+	ti.CharLimit = 300
+	ti.Width = 300
+
+	return model{
+		textInput: ti,
+		err:       nil,
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return textinput.Blink
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch msg.Type {
+		case tea.KeyCtrlC, tea.KeyEsc:
 			return m, tea.Quit
+		case tea.KeyEnter:
+			l.Write(m.textInput.Value() + "\r")
+			time.Sleep(100 * time.Millisecond)
+			// t := make([]byte, 16092)
+			t, _ := l.Read()
+			fmt.Println(t)
+			m.textInput.Reset()
 		}
-	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+
+	// We handle errors just like any other message
+	case errMsg:
+		m.err = msg
+		return m, nil
 	}
 
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
+	m.textInput, cmd = m.textInput.Update(msg)
 	return m, cmd
 }
 
 func (m model) View() string {
-	return docStyle.Render(m.list.View())
-}
-
-func main() {
-	items := []list.Item{
-		item{title: "Raspberry Pi’s", desc: "I have ’em all over my house"},
-		item{title: "Nutella", desc: "It's good on toast"},
-		item{title: "Bitter melon", desc: "It cools you down"},
-		item{title: "Nice socks", desc: "And by that I mean socks without holes"},
-		item{title: "Eight hours of sleep", desc: "I had this once"},
-		item{title: "Cats", desc: "Usually"},
-		item{title: "Plantasia, the album", desc: "My plants love it too"},
-		item{title: "Pour over coffee", desc: "It takes forever to make though"},
-		item{title: "VR", desc: "Virtual reality...what is there to say?"},
-		item{title: "Noguchi Lamps", desc: "Such pleasing organic forms"},
-		item{title: "Linux", desc: "Pretty much the best OS"},
-		item{title: "Business school", desc: "Just kidding"},
-		item{title: "Pottery", desc: "Wet clay is a great feeling"},
-		item{title: "Shampoo", desc: "Nothing like clean hair"},
-		item{title: "Table tennis", desc: "It’s surprisingly exhausting"},
-		item{title: "Milk crates", desc: "Great for packing in your extra stuff"},
-		item{title: "Afternoon tea", desc: "Especially the tea sandwich part"},
-		item{title: "Stickers", desc: "The thicker the vinyl the better"},
-		item{title: "20° Weather", desc: "Celsius, not Fahrenheit"},
-		item{title: "Warm light", desc: "Like around 2700 Kelvin"},
-		item{title: "The vernal equinox", desc: "The autumnal equinox is pretty good too"},
-		item{title: "Gaffer’s tape", desc: "Basically sticky fabric"},
-		item{title: "Terrycloth", desc: "In other words, towel fabric"},
-	}
-
-	m := model{list: list.New(items, list.NewDefaultDelegate(), 0, 0)}
-	m.list.Title = "My Fave Things"
-
-	p := tea.NewProgram(m, tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
-		fmt.Println("Error running program:", err)
-		os.Exit(1)
-	}
+	return fmt.Sprintf("%s\n\n%s",
+		m.textInput.View(),
+		"(esc to quit)",
+	) + "\n"
 }
 
 // package main
