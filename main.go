@@ -1,157 +1,102 @@
 package main
 
-// A simple program demonstrating the text input component from the Bubbles
-// component library.
-
 import (
-	"errors"
-	"fmt"
+	"embed"
 	"log"
-	"os"
-	"os/exec"
-	"time"
+	"solace/leader"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/creack/pty"
-	"github.com/solace/terminal"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/logger"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
-var p *os.File
-var term terminal.Terminal
+//go:embed frontend/dist
+var assets embed.FS
 
-type leader struct {
-	file *os.File
-}
-
-func (l *leader) Initialize() error {
-	c := exec.Command("/bin/zsh")
-	file, err := pty.Start(c)
-	if err != nil {
-		return errors.New("could not start shell")
-	}
-	l.file = file
-	return nil
-}
-
-func (l *leader) Write(message string) (int, error) {
-	return l.file.WriteString(message)
-}
-
-func (l *leader) Read() (string, error) {
-	arr := make([]byte, 16384)
-	l.file.Read(arr)
-	return string(arr), nil
-}
-
-func (l *leader) Close() error {
-	return l.file.Close()
-}
-
-var l leader
+//go:embed build/appicon.png
+var icon []byte
+var ldr *leader.Leader = &leader.Leader{}
 
 func main() {
-	// c := exec.Command("/bin/zsh")
-	// pt, err := pty.Start(c)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	os.Exit(1)
-	// }
-	// p = pt
+	ldr = leader.New()
+	ldr.Initialize(leader.Zsh)
+	// Create an instance of the app structure
+	// 创建一个App结构体实例
+	app := NewApp(ldr)
 
-	l = leader{}
-	l.Initialize()
-	defer l.Close()
-	//term.Run()
-	pr := tea.NewProgram(initialModel())
-	if _, err := pr.Run(); err != nil {
+	// Create application with options
+	// 使用选项创建应用
+	err := wails.Run(&options.App{
+		Title: "solace",
+		// Width:             900,
+		// Height:            600,
+		// MinWidth:          900,
+		// MinHeight:         600,
+		// MaxWidth:          1200,
+		// MaxHeight:         800,
+		DisableResize:     false,
+		Fullscreen:        false,
+		Frameless:         false,
+		StartHidden:       false,
+		HideWindowOnClose: false,
+		BackgroundColour:  &options.RGBA{R: 255, G: 255, B: 255, A: 0},
+		Menu:              nil,
+		Logger:            nil,
+		LogLevel:          logger.DEBUG,
+		OnStartup:         app.startup,
+		OnDomReady:        app.domReady,
+		OnBeforeClose:     app.beforeClose,
+		OnShutdown:        app.shutdown,
+		WindowStartState:  options.Normal,
+		AssetServer: &assetserver.Options{
+			Assets:     assets,
+			Handler:    nil,
+			Middleware: nil,
+		},
+		Bind: []interface{}{
+			app,
+		},
+		// Windows platform specific options
+		// Windows平台特定选项
+		Windows: &windows.Options{
+			WebviewIsTransparent:              true,
+			WindowIsTranslucent:               false,
+			DisableWindowIcon:                 false,
+			DisableFramelessWindowDecorations: false,
+			WebviewUserDataPath:               "",
+			WebviewBrowserPath:                "",
+			Theme:                             windows.SystemDefault,
+		},
+		// Mac platform specific options
+		// Mac平台特定选项
+		Mac: &mac.Options{
+			TitleBar: &mac.TitleBar{
+				TitlebarAppearsTransparent: true,
+				HideTitle:                  true,
+				HideTitleBar:               false,
+				FullSizeContent:            true,
+				UseToolbar:                 false,
+				HideToolbarSeparator:       false,
+			},
+			Appearance:           mac.NSAppearanceNameDarkAqua,
+			WebviewIsTransparent: true,
+			WindowIsTranslucent:  true,
+			About: &mac.AboutInfo{
+				Title:   "Solace",
+				Message: "Terminal for a new age",
+				Icon:    icon,
+			},
+		},
+		Linux: &linux.Options{
+			Icon: icon,
+		},
+	})
+
+	if err != nil {
 		log.Fatal(err)
 	}
 }
-
-type (
-	errMsg error
-)
-
-type model struct {
-	textInput textinput.Model
-	err       error
-}
-
-func initialModel() model {
-	ti := textinput.New()
-	ti.Placeholder = "<command>"
-	ti.Focus()
-	ti.CharLimit = 300
-	ti.Width = 300
-
-	return model{
-		textInput: ti,
-		err:       nil,
-	}
-}
-
-func (m model) Init() tea.Cmd {
-	return textinput.Blink
-}
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
-			return m, tea.Quit
-		case tea.KeyEnter:
-			l.Write(m.textInput.Value() + "\r")
-			time.Sleep(100 * time.Millisecond)
-			// t := make([]byte, 16092)
-			t, _ := l.Read()
-			fmt.Println(t)
-			m.textInput.Reset()
-		}
-
-	// We handle errors just like any other message
-	case errMsg:
-		m.err = msg
-		return m, nil
-	}
-
-	m.textInput, cmd = m.textInput.Update(msg)
-	return m, cmd
-}
-
-func (m model) View() string {
-	return fmt.Sprintf("%s\n\n%s",
-		m.textInput.View(),
-		"(esc to quit)",
-	) + "\n"
-}
-
-// package main
-
-// import (
-// 	"fmt"
-// 	"log"
-// 	"time"
-
-// 	"github.com/solace/terminal"
-// )
-
-// func main() {
-// 	term := terminal.NewTerminal(terminal.Zsh)
-// 	term.OpenShell()
-// 	if err := term.Run(); err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	line := ""
-// 	for line != "quit" {
-// 		fmt.Scanln(&line)
-// 		term.Write(line)
-// 		time.Sleep(1000)
-// 		message, _ := term.Read()
-// 		fmt.Println(message)
-// 	}
-// }
