@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/creack/pty"
 	"github.com/solace/terminal"
 )
@@ -75,6 +77,7 @@ type (
 
 type model struct {
 	textInput textinput.Model
+	viewPort  viewport.Model
 	err       error
 }
 
@@ -85,8 +88,14 @@ func initialModel() model {
 	ti.CharLimit = 300
 	ti.Width = 300
 
+	vp := viewport.New(100, 300)
+	vp.Style = lipgloss.NewStyle()
+	vp.HighPerformanceRendering = true
+	vp.MouseWheelEnabled = true
+
 	return model{
 		textInput: ti,
+		viewPort:  vp,
 		err:       nil,
 	}
 }
@@ -97,6 +106,7 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+	var cmd1 tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -109,6 +119,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// t := make([]byte, 16092)
 			t, _ := l.Read()
 			fmt.Println(t)
+			m.viewPort.SetContent(t)
 			m.textInput.Reset()
 		}
 
@@ -119,11 +130,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	m.textInput, cmd = m.textInput.Update(msg)
-	return m, cmd
+	m.viewPort, cmd1 = m.viewPort.Update(msg)
+	return m, tea.Batch(cmd, cmd1)
 }
 
 func (m model) View() string {
-	return fmt.Sprintf("%s\n\n%s",
+	return fmt.Sprintf("%s\n%s\n\n%s",
+		m.viewPort.View(),
 		m.textInput.View(),
 		"(esc to quit)",
 	) + "\n"
